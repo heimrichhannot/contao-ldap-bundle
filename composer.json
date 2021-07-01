@@ -1,0 +1,61 @@
+{
+    "name": "heimrichhannot/contao-ldap-bundle",
+    "description": "This bundle offers functionality concerning LDAP servers for the Contao CMS.",
+    "keywords": [
+        "contao",
+        "ldap",
+        "user",
+        "member",
+        "group"
+    ],
+    "type": "contao-bundle",
+    "homepage": "https://github.com/heimrichhannot/contao-ldap-bundle",
+    "license": "LGPL-3.0-or-later",
+    "authors": [
+        {
+            "name": "Heimrich & Hannot",
+            "email": "digitales@heimrich-hannot.de",
+            "homepage": "http://www.heimrich-hannot.de",
+            "role": "Developer"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/heimrichhannot/contao-ldap-bundle/issues"
+    },
+    "require": {
+        "php": "^7.4",
+        "contao/core-bundle": "^4.9",
+        "ext-ldap": "*",
+        "heimrichhannot/contao-utils-bundle": "^2.195"
+    },
+    "require-dev": {
+        "contao/test-case": "1.1.*",
+        "contao/manager-plugin": "^2.0",
+        "friendsofphp/php-cs-fixer": "^2.2",
+        "phpunit/phpunit": "^6.0",
+        "php-http/guzzle6-adapter": "^1.1",
+        "php-http/message-factory": "^1.0.2",
+        "php-coveralls/php-coveralls": "^2.0",
+        "symfony/phpunit-bridge": "^3.2"
+    },
+    "autoload": {
+        "psr-4": {
+            "HeimrichHannot\\LdapBundle\\": "src/",
+            "Contao\\": "src/Contao/"
+        },
+        "classmap": [
+            "src/"
+        ]
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "HeimrichHannot\\LdapBundle\\Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "preferred-install": "dist"
+    },
+    "extra": {
+        "contao-manager-plugin": "HeimrichHannot\\LdapBundle\\ContaoManager\\Plugin"
+    }
+}
