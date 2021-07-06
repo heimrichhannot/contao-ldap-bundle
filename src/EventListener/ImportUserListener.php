@@ -8,44 +8,36 @@
 
 namespace HeimrichHannot\LdapBundle\EventListener;
 
+use Contao\CoreBundle\ServiceAnnotation\Hook;
 use HeimrichHannot\LdapBundle\HeimrichHannotLdapBundle;
 use HeimrichHannot\LdapBundle\Util\LdapUtil;
-use HeimrichHannot\RequestBundle\Component\HttpFoundation\Request;
 use HeimrichHannot\UtilsBundle\Util\Utils;
-use Symfony\Component\Security\Core\Event\AuthenticationFailureEvent;
-use Terminal42\ServiceAnnotationBundle\Annotation\ServiceTag;
 
 /**
- * @ServiceTag("kernel.event_listener", event="security.authentication.failure")
+ * @Hook("importUser")
+ *
+ * Used to create non-existing or update existing users and groups on login.
  */
-class AuthenticationFailureListener
+class ImportUserListener
 {
     /**
      * @var LdapUtil
      */
     protected $ldapUtil;
     /**
-     * @var Request
-     */
-    protected $request;
-    /**
      * @var Utils
      */
     protected $utils;
 
-    public function __construct(Utils $utils, LdapUtil $ldapUtil, Request $request)
+    public function __construct(Utils $utils, LdapUtil $ldapUtil)
     {
         $this->utils = $utils;
         $this->ldapUtil = $ldapUtil;
-        $this->request = $request;
     }
 
-    public function __invoke(AuthenticationFailureEvent $event)
+    public function __invoke(string $username, string $password, string $table)
     {
         $mode = $this->utils->container()->isFrontend() ? HeimrichHannotLdapBundle::MODE_MEMBER : HeimrichHannotLdapBundle::MODE_USER;
-
-        $username = $this->request->getPost('username');
-        $password = $this->request->getPost('password');
 
         $result = $this->ldapUtil->authenticateLdapPerson(
             $mode,
@@ -56,7 +48,9 @@ class AuthenticationFailureListener
         if (true === $result) {
             $this->ldapUtil->syncPerson($mode, $username);
 
-            $event->stopPropagation();
+            return true;
         }
+
+        return false;
     }
 }

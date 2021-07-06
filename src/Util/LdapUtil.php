@@ -13,6 +13,7 @@ use Contao\FrontendUser;
 use HeimrichHannot\LdapBundle\HeimrichHannotLdapBundle;
 use HeimrichHannot\UtilsBundle\Database\DatabaseUtil;
 use HeimrichHannot\UtilsBundle\Model\ModelUtil;
+use Symfony\Component\Ldap\Ldap;
 use Symfony\Component\Security\Core\Encoder\EncoderFactoryInterface;
 
 class LdapUtil
@@ -49,7 +50,7 @@ class LdapUtil
     /**
      * @param string $mode HeimrichHannotLdapBundle::MODE_USER or HeimrichHannotLdapBundle::MODE_MEMBER
      *
-     * @return resource|false The connection for the given mode or false in case of error
+     * @return Ldap|false The connection for the given mode or false in case of error
      */
     public function getConnection(string $mode)
     {
@@ -57,33 +58,17 @@ class LdapUtil
             return static::$connections[$mode];
         }
 
-        $config = $this->bundleConfig[$mode];
+        $connection = Ldap::create('ext_ldap', $this->bundleConfig[$mode]['connection']);
 
-        if (!($host = $config['host'])
-            || !($port = $config['port'])
-            || !($bindDn = $config['bind_dn'])
-            || !($bindPassword = $config['bind_password'])
-        ) {
-            return false;
-        }
-
-        $connection = ldap_connect(('ssl' == $config['encryption'] ? 'ldaps://' : 'ldap://').$host, (int) $port);
-
-        if (!$connection || !\is_resource($connection)) {
-            return false;
-        }
-
-        ldap_set_option($connection, LDAP_OPT_PROTOCOL_VERSION, 3);
-        ldap_set_option($connection, LDAP_OPT_REFERRALS, 0);
-
-        // check if bind dn can connect to ldap server
-        if (!@ldap_bind($connection, $bindDn, $bindPassword)) {
+        try {
+            $connection->bind($this->bundleConfig[$mode]['bind_dn'], $this->bundleConfig[$mode]['bind_password']);
+        } catch (\Exception $e) {
             return false;
         }
 
         static::$connections[$mode] = $connection;
 
-        return $connection;
+        return static::$connections[$mode];
     }
 
     /**
@@ -109,9 +94,9 @@ class LdapUtil
         // create the attributes array for performance reasons (getting all attributes is more expensive)
         $attributes = [
             'uid',
-            'uidnumber',
-            'givenname',
-            'displayname',
+            'uidNumber',
+            'givenName',
+            'displayName',
             'sn',
             'mail',
         ];
@@ -122,64 +107,51 @@ class LdapUtil
 
         $attributes = array_unique($attributes);
 
-        $query = ldap_search(
-            $connection,
-            $dn,
-            $config['filter'] ?? '(cn=*)',
-            $attributes
-        );
+        $ldapPersons = $connection->query($dn, $config['filter'] ?? '(cn=*)', [
+            'filter' => $attributes,
+        ])->execute();
 
-        if (!$query) {
-            return [];
-        }
-
-        $ldapPersons = ldap_get_entries($connection, $query);
-
-        if (!\is_array($ldapPersons)) {
+        if ($ldapPersons->count() < 1) {
             return [];
         }
 
         // prepare for simpler usage
         $result = [];
 
-        if ($ldapPersons['count'] > 0) {
-            unset($ldapPersons['count']);
+        foreach ($ldapPersons as $ldapPerson) {
+            $person = [
+                'ldapUidNumber' => $ldapPerson->getAttribute('uidNumber')[0],
+                'ldapUid' => $ldapPerson->getAttribute('uid')[0],
+                'email' => $ldapPerson->getAttribute('mail')[0] ?? '',
+                'dn' => $ldapPerson->getDn(),
+            ];
 
-            foreach ($ldapPersons as $ldapPerson) {
-                $person = [
-                    'ldapUidNumber' => $ldapPerson['uidnumber'][0],
-                    'ldapUid' => $ldapPerson['uid'][0],
-                    'email' => $ldapPerson['mail'][0] ?? '',
-                    'dn' => $ldapPerson['dn'],
-                ];
-
-                if (\in_array($person['ldapUidNumber'], $skipUidNumbers) || \in_array($person['ldapUid'], $skipUids)) {
-                    continue;
-                }
-
-                if (isset($ldapPerson[$this->bundleConfig[$mode]['person_username_ldap_field']][0])) {
-                    $person['username'] = $ldapPerson[$this->bundleConfig[$mode]['person_username_ldap_field']][0];
-                }
-
-                if (HeimrichHannotLdapBundle::MODE_MEMBER === $mode) {
-                    $person['firstname'] = $ldapPerson['givenname'][0] ?? '';
-                    $person['lastname'] = $ldapPerson['sn'][0] ?? '';
-                } else {
-                    $person['name'] = $ldapPerson['displayname'][0] ?? '';
-                }
-
-                foreach ($fieldMapping as $mapping) {
-                    if (isset($ldapPerson[$mapping['ldap_field']][0])) {
-                        $person[$mapping['contao_field']] = $ldapPerson[$mapping['ldap_field']][0];
-                    }
-                }
-
-                foreach ($defaultValues as $mapping) {
-                    $person[$mapping['field']] = $mapping['value'];
-                }
-
-                $result[$person['username']] = $person;
+            if (\in_array($person['ldapUidNumber'], $skipUidNumbers) || \in_array($person['ldapUid'], $skipUids)) {
+                continue;
             }
+
+            if ($ldapPerson->getAttribute($this->bundleConfig[$mode]['person_username_ldap_field'])) {
+                $person['username'] = $ldapPerson->getAttribute($this->bundleConfig[$mode]['person_username_ldap_field'])[0];
+            }
+
+            if (HeimrichHannotLdapBundle::MODE_MEMBER === $mode) {
+                $person['firstname'] = $ldapPerson->getAttribute('givenName') ? $ldapPerson->getAttribute('givenName')[0] : '';
+                $person['lastname'] = $ldapPerson->getAttribute('sn') ? $ldapPerson->getAttribute('sn')[0] : '';
+            } else {
+                $person['name'] = $ldapPerson->getAttribute('displayName') ? $ldapPerson->getAttribute('displayName')[0] : '';
+            }
+
+            foreach ($fieldMapping as $mapping) {
+                if ($ldapPerson->getAttribute($mapping['ldap_field'])) {
+                    $person[$mapping['contao_field']] = $ldapPerson->getAttribute($mapping['ldap_field'])[0];
+                }
+            }
+
+            foreach ($defaultValues as $mapping) {
+                $person[$mapping['field']] = $mapping['value'];
+            }
+
+            $result[$person['username']] = $person;
         }
 
         return $result;
@@ -219,8 +191,8 @@ class LdapUtil
 
         // create the attributes array for performance reasons (getting all attributes is more expensive)
         $attributes = [
-            'gidnumber',
-            'memberuid',
+            'gidNumber',
+            'memberUid',
             'cn',
         ];
 
@@ -230,62 +202,47 @@ class LdapUtil
 
         $attributes = array_unique($attributes);
 
-        $query = ldap_search(
-            $connection,
-            $dn,
-            $config['filter'] ?? '(cn=*)',
-            $attributes
-        );
+        $ldapGroups = $connection->query($dn, $config['filter'] ?? '(cn=*)', [
+            'filter' => $attributes,
+        ])->execute();
 
-        if (!$query) {
-            return [];
-        }
-
-        $ldapGroups = ldap_get_entries($connection, $query);
-
-        if (!\is_array($ldapGroups)) {
+        if ($ldapGroups->count() < 1) {
             return [];
         }
 
         // prepare for simpler usage
         $result = [];
 
-        if ($ldapGroups['count'] > 0) {
-            unset($ldapGroups['count']);
+        foreach ($ldapGroups as $ldapGroup) {
+            $person = [
+                'ldapGidNumber' => $ldapGroup->getAttribute('gidNumber')[0],
+                'name' => $ldapGroup->getAttribute('cn') ? $ldapGroup->getAttribute('cn')[0] : '',
+                'memberUids' => [],
+            ];
 
-            foreach ($ldapGroups as $ldapGroup) {
-                $person = [
-                    'ldapGidNumber' => $ldapGroup['gidnumber'][0],
-                    'name' => $ldapGroup['cn'][0] ?? '',
-                    'memberUids' => [],
-                ];
-
-                if (\in_array($person['ldapGidNumber'], $skipGidNumbers)) {
-                    continue;
-                }
-
-                if (isset($ldapGroup['memberuid']['count']) && $ldapGroup['memberuid']['count'] > 0) {
-                    unset($ldapGroup['memberuid']['count']);
-
-                    foreach ($ldapGroup['memberuid'] as $uid) {
-                        $person['memberUids'][] = $uid;
-                    }
-
-                    $person['memberUids'] = array_unique($person['memberUids']);
-                }
-
-                foreach ($fieldMapping as $mapping) {
-                    if (isset($ldapGroup[$mapping['ldap_field']][0])) {
-                        $person[$mapping['contao_field']] = $ldapGroup[$mapping['ldap_field']][0];
-                    }
-                }
-
-                foreach ($defaultValues as $mapping) {
-                    $person[$mapping['field']] = $mapping['value'];
-                }
-
-                $result[] = $person;
+            if (\in_array($person['ldapGidNumber'], $skipGidNumbers)) {
+                continue;
             }
+
+            if ($ldapGroup->getAttribute('memberUid')) {
+                foreach ($ldapGroup->getAttribute('memberUid') as $uid) {
+                    $person['memberUids'][] = $uid;
+                }
+
+                $person['memberUids'] = array_unique($person['memberUids']);
+            }
+
+            foreach ($fieldMapping as $mapping) {
+                if ($ldapGroup->getAttribute($mapping['ldap_field'])) {
+                    $person[$mapping['contao_field']] = $ldapGroup->getAttribute($mapping['ldap_field'])[0];
+                }
+            }
+
+            foreach ($defaultValues as $mapping) {
+                $person[$mapping['field']] = $mapping['value'];
+            }
+
+            $result[] = $person;
         }
 
         return $result;
@@ -309,64 +266,67 @@ class LdapUtil
         $limitUids = $options['limitUids'] ?? [];
 
         $ldapPersons = $this->retrievePersonsFromLdap($mode);
-        $ldapGroups = $this->retrieveGroupsFromLdap($mode);
 
         // create groups
         $groupIdMapping = [];
         $groupAssociations = [];
 
-        foreach ($ldapGroups as $ldapGroup) {
-            $groupData = $ldapGroup;
+        if (isset($this->bundleConfig[$mode]['group'])) {
+            $ldapGroups = $this->retrieveGroupsFromLdap($mode);
 
-            $table = 'tl_'.$mode.'_group';
+            foreach ($ldapGroups as $ldapGroup) {
+                $groupData = $ldapGroup;
 
-            $memberUids = $groupData['memberUids'];
+                $table = 'tl_'.$mode.'_group';
 
-            unset($groupData['memberUids']);
+                $memberUids = $groupData['memberUids'];
 
-            $group = $this->databaseUtil->findOneResultBy($table, ["$table.ldapGidNumber=?"], [$ldapGroup['ldapGidNumber']]);
+                unset($groupData['memberUids']);
 
-            if ($group->numRows < 1) {
-                $groupData['tstamp'] = time();
+                $group = $this->databaseUtil->findOneResultBy($table, ["$table.ldapGidNumber=?"], [$ldapGroup['ldapGidNumber']]);
 
-                $statement = $this->databaseUtil->insert($table, $groupData);
+                if ($group->numRows < 1) {
+                    $groupData['tstamp'] = time();
 
-                $groupIdMapping[$ldapGroup['ldapGidNumber']] = $statement->insertId;
-            } else {
-                $existingGroupData = $group->row();
+                    $statement = $this->databaseUtil->insert($table, $groupData);
 
-                $groupIdMapping[$ldapGroup['ldapGidNumber']] = $existingGroupData['id'];
+                    $groupIdMapping[$ldapGroup['ldapGidNumber']] = $statement->insertId;
+                } else {
+                    $existingGroupData = $group->row();
 
-                unset($existingGroupData['id']);
+                    $groupIdMapping[$ldapGroup['ldapGidNumber']] = $existingGroupData['id'];
 
-                // check if something changed
-                $update = false;
+                    unset($existingGroupData['id']);
 
-                foreach ($groupData as $field => $value) {
-                    if ($existingGroupData[$field] !== $value) {
-                        $update = true;
+                    // check if something changed
+                    $update = false;
 
-                        break;
+                    foreach ($groupData as $field => $value) {
+                        if ($existingGroupData[$field] !== $value) {
+                            $update = true;
+
+                            break;
+                        }
+                    }
+
+                    if ($update) {
+                        $groupData['tstamp'] = time();
+
+                        $this->databaseUtil->update($table, $groupData, "$table.id=?", [$group->row()['id']]);
                     }
                 }
 
-                if ($update) {
-                    $groupData['tstamp'] = time();
+                // group associations
+                $groupId = $groupIdMapping[$ldapGroup['ldapGidNumber']];
 
-                    $this->databaseUtil->update($table, $groupData, "$table.id=?", [$group->row()['id']]);
-                }
-            }
+                foreach ($memberUids as $memberUid) {
+                    if (!isset($groupAssociations[$memberUid])) {
+                        $groupAssociations[$memberUid] = [];
+                    }
 
-            // group associations
-            $groupId = $groupIdMapping[$ldapGroup['ldapGidNumber']];
-
-            foreach ($memberUids as $memberUid) {
-                if (!isset($groupAssociations[$memberUid])) {
-                    $groupAssociations[$memberUid] = [];
-                }
-
-                if (!\in_array($groupId, $groupAssociations[$memberUid])) {
-                    $groupAssociations[$memberUid][] = $groupId;
+                    if (!\in_array($groupId, $groupAssociations[$memberUid])) {
+                        $groupAssociations[$memberUid][] = $groupId;
+                    }
                 }
             }
         }
@@ -418,7 +378,17 @@ class LdapUtil
                         break;
                 }
 
-                $this->databaseUtil->insert($table, $personData);
+                $statement = $this->databaseUtil->insert($table, $personData);
+
+                // create passwort history to avoid pwChange=1
+                if (class_exists('Terminal42\PasswordValidationBundle\Terminal42PasswordValidationBundle')) {
+                    $this->databaseUtil->insert('tl_password_history', [
+                        'tstamp' => time(),
+                        'user_id' => $statement->insertId,
+                        'user_entity' => HeimrichHannotLdapBundle::MODE_USER === $mode ? 'Contao\BackendUser' : 'Contao\FrontendUser',
+                        'password' => $personData['password'],
+                    ]);
+                }
             } else {
                 $existingPersonData = $person->row();
 
@@ -444,28 +414,15 @@ class LdapUtil
         }
     }
 
-    /**
-     * importUser hook.
-     */
-    public function importPersonFromLdap($strUsername, $strPassword, $strTable)
-    {
-        if (static::authenticateLdapPerson($strUsername, $strPassword)) {
-            $strLdapModelClass = static::$strLdapModel;
-            static::createOrUpdatePerson(null, $strLdapModelClass::findByUsername($strUsername), $strUsername);
-
-            return true;
-        }
-
-        return false;
-    }
-
     public function authenticateLdapPerson(string $mode, string $username, string $password): bool
     {
         if (false === ($person = $this->retrievePersonFromLdap($mode, $username))) {
             return false;
         }
 
-        if (!@ldap_bind($this->getConnection($mode), $person['dn'], $password)) {
+        try {
+            $this->getConnection($mode)->bind($person['dn'], $password);
+        } catch (\Exception $e) {
             return false;
         }
 

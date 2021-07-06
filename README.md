@@ -21,14 +21,15 @@ A sample configuration for syncing backend users could be as follows (member con
 ```yaml
 huh_ldap:
   user:
-    host: localhost
-    encryption: ssl
+    connection: # here you can pass in all options allowed in symfony/ldap connections
+      host: localhost
+      encryption: ssl
     bind_dn: cn=admin,dc=example,dc=com
     bind_password: some_password
     person_username_ldap_field: uid # this field is used to match the username in contao login forms with the ldap representation
-    person:
+    person: # config for persons
       base_dn: ou=People,dc=example,dc=com
-    group:
+    group: # config for groups
       base_dn: ou=Groups,dc=example,dc=com
 ```
 
@@ -49,7 +50,8 @@ demand on login. Nevertheless, if you need to have up-to-date data, you can call
 
 Name | Description
 -----|------------
-huh_ldap:sync | Synchronize the members/users as specified in your `config.yml`
+`huh_ldap:sync` | Synchronize the members/users as specified in your `config.yml`
+`huh_ldap:check_connection` | Check if the connection works with the config specified in your `config.yml`
 
 ### Events
 
