@@ -11,6 +11,6 @@ $dca = &$GLOBALS['TL_DCA']['tl_user_group'];
 /*
  * Fields
  */
-$dca['fields']['ldapGid'] = [
+$dca['fields']['ldapGidNumber'] = [
     'sql' => "int(10) unsigned NOT NULL default '0'",
 ];

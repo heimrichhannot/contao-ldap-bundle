@@ -6,4 +6,4 @@ services:
       $bundleConfig: '%huh_ldap%'
 
   HeimrichHannot\LdapBundle\:
-    resource: '../../{Util}/*'
+    resource: '../../{EventListener,Util}/*'

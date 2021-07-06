@@ -13,6 +13,9 @@ use Symfony\Component\HttpKernel\Bundle\Bundle;
 
 class HeimrichHannotLdapBundle extends Bundle
 {
+    const MODE_USER = 'user';
+    const MODE_MEMBER = 'member';
+
     public function getContainerExtension()
     {
         return new HeimrichHannotLdapExtension();
