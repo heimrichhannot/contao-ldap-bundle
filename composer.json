@@ -26,7 +26,9 @@
         "php": "^7.4",
         "contao/core-bundle": "^4.9",
         "ext-ldap": "*",
-        "heimrichhannot/contao-utils-bundle": "^2.195"
+        "symfony/ldap": "^4.4",
+        "heimrichhannot/contao-utils-bundle": "^2.196",
+        "heimrichhannot/contao-request-bundle": "^1.2"
     },
     "require-dev": {
         "contao/test-case": "1.1.*",

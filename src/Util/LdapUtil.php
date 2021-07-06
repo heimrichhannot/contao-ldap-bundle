@@ -294,8 +294,20 @@ class LdapUtil
     /**
      * @param string $mode HeimrichHannotLdapBundle::MODE_USER or HeimrichHannotLdapBundle::MODE_MEMBER
      */
-    public function syncPersons(string $mode): void
+    public function syncPerson(string $mode, string $uid): void
     {
+        $this->syncPersons($mode, [
+            'limitUids' => [$uid],
+        ]);
+    }
+
+    /**
+     * @param string $mode HeimrichHannotLdapBundle::MODE_USER or HeimrichHannotLdapBundle::MODE_MEMBER
+     */
+    public function syncPersons(string $mode, array $options = []): void
+    {
+        $limitUids = $options['limitUids'] ?? [];
+
         $ldapPersons = $this->retrievePersonsFromLdap($mode);
         $ldapGroups = $this->retrieveGroupsFromLdap($mode);
 
@@ -362,6 +374,10 @@ class LdapUtil
         // create persons
         foreach ($ldapPersons as $ldapPerson) {
             $personData = $ldapPerson;
+
+            if (!empty($limitUids) && !\in_array($ldapPerson['ldapUid'], $limitUids)) {
+                continue;
+            }
 
             $table = 'tl_'.$mode;
 
@@ -436,22 +452,6 @@ class LdapUtil
         if (static::authenticateLdapPerson($strUsername, $strPassword)) {
             $strLdapModelClass = static::$strLdapModel;
             static::createOrUpdatePerson(null, $strLdapModelClass::findByUsername($strUsername), $strUsername);
-
-            return true;
-        }
-
-        return false;
-    }
-
-    /**
-     * check credentials hook -> ldap password != contao password.
-     */
-    public function authenticateAgainstLdap($strUsername, $strPassword, $objPerson)
-    {
-        if (static::authenticateLdapPerson($strUsername, $strPassword)) {
-            // update since groups and/or mapped fields could have changed remotely
-            $strLdapModelClass = static::$strLdapModel;
-            static::createOrUpdatePerson($objPerson, $strLdapModelClass::findByUsername($strUsername), $strUsername);
 
             return true;
         }
