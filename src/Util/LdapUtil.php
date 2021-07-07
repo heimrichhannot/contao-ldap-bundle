@@ -61,6 +61,10 @@ class LdapUtil
             return static::$connections[$mode];
         }
 
+        if (!isset($this->bundleConfig[$mode]['connection'])) {
+            return false;
+        }
+
         $connection = Ldap::create('ext_ldap', $this->bundleConfig[$mode]['connection']);
 
         try {
@@ -417,8 +421,20 @@ class LdapUtil
 
             unset($personData['ldapUid'], $personData['dn']);
 
-            // admin?
-            $personData['admin'] = \in_array($ldapPerson['ldapUid'], $adminPersonUids) ? true : '';
+            switch ($mode) {
+                case HeimrichHannotLdapBundle::MODE_USER:
+                    // admin?
+                    $personData['admin'] = \in_array($ldapPerson['ldapUid'], $adminPersonUids) ? true : '';
+
+                    $ioLogName = $personData['name'];
+
+                    break;
+
+                case HeimrichHannotLdapBundle::MODE_MEMBER:
+                    $ioLogName = $personData['firstname'].' '.$personData['lastname'];
+
+                    break;
+            }
 
             $person = $this->databaseUtil->findOneResultBy($table, ["$table.ldapUidNumber=?"], [$ldapPerson['ldapUidNumber']]);
 
@@ -434,6 +450,7 @@ class LdapUtil
                     HeimrichHannotLdapBundle::MODE_MEMBER === $mode ? FrontendUser::class : BackendUser::class
                 );
 
+                // set password to random to ensure checkCredentials hook is always called
                 $password = uniqid('', true);
 
                 $personData['password'] = $encoder->encodePassword($password, null);
@@ -447,11 +464,13 @@ class LdapUtil
                         break;
 
                     case HeimrichHannotLdapBundle::MODE_MEMBER:
+                        $personData['login'] = true;
+
                         break;
                 }
 
                 if ($io) {
-                    $io->success('Inserted new '.$table.' instance for LDAP person "'.$personData['name'].' (uid: '.$ldapPerson['ldapUid'].')".');
+                    $io->success('Inserted new '.$table.' instance for LDAP person "'.$ioLogName.' (uid: '.$ldapPerson['ldapUid'].')".');
                 }
 
                 if (!$dryRun) {
@@ -487,7 +506,7 @@ class LdapUtil
                     $personData['tstamp'] = time();
 
                     if ($io) {
-                        $io->success('Updated '.$table.' instance ID '.$person->row()['id'].' for LDAP person "'.$personData['name'].' (uid: '.$ldapPerson['ldapUid'].')".');
+                        $io->success('Updated '.$table.' instance ID '.$person->row()['id'].' for LDAP person "'.$ioLogName.' (uid: '.$ldapPerson['ldapUid'].')".');
                     }
 
                     if (!$dryRun) {

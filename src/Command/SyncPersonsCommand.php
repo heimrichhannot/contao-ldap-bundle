@@ -89,11 +89,17 @@ class SyncPersonsCommand extends Command
         // check connection
         foreach ($modes as $mode) {
             try {
-                $this->ldapUtil->getConnection($mode, [
+                $result = $this->ldapUtil->getConnection($mode, [
                     'throwExceptions' => true,
                 ]);
             } catch (\Exception $e) {
                 $this->io->error($e->getMessage());
+
+                return 1;
+            }
+
+            if (false === $result) {
+                $this->io->error('Connection to LPAP server failed. Did you create a correct configuration in your config.yml?');
 
                 return 1;
             }
