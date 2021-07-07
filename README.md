@@ -16,7 +16,7 @@ This bundle offers functionality concerning LDAP servers for the Contao CMS.
 
 Run `vendor/bin/contao-console config:dump-reference huh_ldap` to see the complete config reference.
 
-A sample configuration for syncing backend users could be as follows (member configuration is practically identical):
+A sample configuration for syncing backend users could be as follows (member configuration is nearly identical):
 
 ```yaml
 huh_ldap:
@@ -28,6 +28,7 @@ huh_ldap:
     bind_password: some_password
     person_username_ldap_field: uid # this field is used to match the username in contao login forms with the ldap representation
     person: # config for persons
+      admin_gid_number: 5002
       base_dn: ou=People,dc=example,dc=com
     group: # config for groups
       base_dn: ou=Groups,dc=example,dc=com
@@ -37,7 +38,7 @@ huh_ldap:
 
 ### How does the synchronization work?
 
-Basically, by running the command `vendor/bin/contao-console huh_ldap:sync` the groups and users are imported as
+Basically, by running the command `vendor/bin/contao-console huh_ldap:sync_persons` the users and groups are imported as
 specified in your `config.yml` configuration. You can do that initially to retrieve all users/members.
 
 In addition, on login (backend and frontend), the data for the given username is retrieved from ldap and synced to the
@@ -48,10 +49,9 @@ demand on login. Nevertheless, if you need to have up-to-date data, you can call
 
 ### Commands
 
-Name | Description
------|------------
-`huh_ldap:sync` | Synchronize the members/users as specified in your `config.yml`
-`huh_ldap:check_connection` | Check if the connection works with the config specified in your `config.yml`
+Name | Description | Options
+-----|-------------|--------
+`huh_ldap:sync_persons` | Synchronize the members/users as specified in your `config.yml` | `dry-run`: See what the command would do without changing any data.<br>`mode`: Limit the command to users or members ("user" or "member"). Dismiss the parameter to do both.
 
 ### Events
 

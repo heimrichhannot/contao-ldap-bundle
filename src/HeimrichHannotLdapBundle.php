@@ -16,6 +16,11 @@ class HeimrichHannotLdapBundle extends Bundle
     const MODE_USER = 'user';
     const MODE_MEMBER = 'member';
 
+    const MODES = [
+        self::MODE_USER,
+        self::MODE_MEMBER,
+    ];
+
     public function getContainerExtension()
     {
         return new HeimrichHannotLdapExtension();

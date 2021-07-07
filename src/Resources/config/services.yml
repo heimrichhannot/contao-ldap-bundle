@@ -2,8 +2,9 @@ services:
   _defaults:
     public: true
     autowire: true
+    autoconfigure: true
     bind:
       $bundleConfig: '%huh_ldap%'
 
   HeimrichHannot\LdapBundle\:
-    resource: '../../{EventListener,Util}/*'
+    resource: '../../{Command,EventListener,Util}/*'
