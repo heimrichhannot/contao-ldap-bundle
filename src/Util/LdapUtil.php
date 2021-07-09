@@ -10,10 +10,13 @@ namespace HeimrichHannot\LdapBundle\Util;
 
 use Contao\BackendUser;
 use Contao\FrontendUser;
+use HeimrichHannot\LdapBundle\Event\AfterPersonImportEvent;
+use HeimrichHannot\LdapBundle\Event\AfterPersonUpdateEvent;
 use HeimrichHannot\LdapBundle\HeimrichHannotLdapBundle;
 use HeimrichHannot\UtilsBundle\Database\DatabaseUtil;
 use HeimrichHannot\UtilsBundle\Model\ModelUtil;
 use Symfony\Component\Console\Style\SymfonyStyle;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Ldap\Ldap;
 use Symfony\Component\Security\Core\Encoder\EncoderFactoryInterface;
 
@@ -39,13 +42,23 @@ class LdapUtil
      * @var EncoderFactoryInterface
      */
     protected $encoderFactory;
+    /**
+     * @var EventDispatcherInterface
+     */
+    protected $eventDispatcher;
 
-    public function __construct(array $bundleConfig, EncoderFactoryInterface $encoderFactory, DatabaseUtil $databaseUtil, ModelUtil $modelUtil)
-    {
+    public function __construct(
+        array $bundleConfig,
+        EncoderFactoryInterface $encoderFactory,
+        DatabaseUtil $databaseUtil,
+        ModelUtil $modelUtil,
+        EventDispatcherInterface $eventDispatcher
+    ) {
         $this->bundleConfig = $bundleConfig;
         $this->encoderFactory = $encoderFactory;
         $this->databaseUtil = $databaseUtil;
         $this->modelUtil = $modelUtil;
+        $this->eventDispatcher = $eventDispatcher;
     }
 
     /**
@@ -266,11 +279,11 @@ class LdapUtil
     /**
      * @param string $mode HeimrichHannotLdapBundle::MODE_USER or HeimrichHannotLdapBundle::MODE_MEMBER
      */
-    public function syncPerson(string $mode, string $uid): void
+    public function syncPerson(string $mode, string $uid, array $options = []): void
     {
-        $this->syncPersons($mode, [
-            'limitUids' => [$uid],
-        ]);
+        $options['limitUids'] = $options['limitUids'] ?? [$uid];
+
+        $this->syncPersons($mode, $options);
     }
 
     /**
@@ -280,6 +293,10 @@ class LdapUtil
     {
         $limitUids = $options['limitUids'] ?? [];
         $dryRun = $options['dryRun'] ?? [];
+        $setLoginTimestamps = $options['setLoginTimestamps'] ?? false;
+
+        // needs to be updated on login because else symfony auth overrides the changes made here again
+        $userObject = $options['userObject'] ?? null;
 
         /** @var SymfonyStyle $io */
         $io = $options['io'] ?? [];
@@ -405,7 +422,7 @@ class LdapUtil
         }
 
         // create persons
-        foreach ($ldapPersons as $ldapPerson) {
+        foreach ($ldapPersons as $username => $ldapPerson) {
             $personData = $ldapPerson;
 
             if (!empty($limitUids) && !\in_array($ldapPerson['ldapUid'], $limitUids)) {
@@ -436,21 +453,21 @@ class LdapUtil
                     break;
             }
 
-            $person = $this->databaseUtil->findOneResultBy($table, ["$table.ldapUidNumber=?"], [$ldapPerson['ldapUidNumber']]);
+            $person = $this->databaseUtil->findOneResultBy($table, ["$table.ldapUidNumber=? OR $table.username=?"], [$ldapPerson['ldapUidNumber'], $username]);
 
             if ($person->numRows < 1) {
                 $personData['tstamp'] = $personData['dateAdded'] = time();
 
-                // set in order to avoid that the user needs to set a new password
-                $personData['lastLogin'] = $personData['dateAdded'] + 1;
-                $personData['currentLogin'] = $personData['dateAdded'] + 2;
+                if ($setLoginTimestamps) {
+                    $personData['lastLogin'] = 0;
+                    $personData['currentLogin'] = time();
+                }
 
-                // set random password
+                // set password to random to ensure checkCredentials hook is always called
                 $encoder = $this->encoderFactory->getEncoder(
                     HeimrichHannotLdapBundle::MODE_MEMBER === $mode ? FrontendUser::class : BackendUser::class
                 );
 
-                // set password to random to ensure checkCredentials hook is always called
                 $password = uniqid('', true);
 
                 $personData['password'] = $encoder->encodePassword($password, null);
@@ -475,21 +492,32 @@ class LdapUtil
 
                 if (!$dryRun) {
                     $statement = $this->databaseUtil->insert($table, $personData);
+                    $id = $statement->insertId;
 
                     // create passwort history to avoid pwChange=1
                     if (class_exists('Terminal42\PasswordValidationBundle\Terminal42PasswordValidationBundle')) {
                         $this->databaseUtil->insert('tl_password_history', [
                             'tstamp' => time(),
-                            'user_id' => $statement->insertId,
+                            'user_id' => $id,
                             'user_entity' => HeimrichHannotLdapBundle::MODE_USER === $mode ? 'Contao\BackendUser' : 'Contao\FrontendUser',
                             'password' => $personData['password'],
                         ]);
                     }
+
+                    $personData['id'] = $id;
+
+                    /* @var AfterPersonImportEvent $event */
+                    $this->eventDispatcher->dispatch(new AfterPersonImportEvent($ldapPerson, $personData));
                 }
             } else {
                 $existingPersonData = $person->row();
 
                 unset($existingPersonData['id']);
+
+                if ($setLoginTimestamps) {
+                    $personData['lastLogin'] = $personData['currentLogin'] ?? 0;
+                    $personData['currentLogin'] = time();
+                }
 
                 // check if something changed
                 $update = false;
@@ -510,7 +538,20 @@ class LdapUtil
                     }
 
                     if (!$dryRun) {
-                        $this->databaseUtil->update($table, $personData, "$table.id=?", [$person->row()['id']]);
+                        $id = $person->row()['id'];
+
+                        $this->databaseUtil->update($table, $personData, "$table.id=?", [$id]);
+
+                        if (null !== $userObject && 1 === \count($limitUids)) {
+                            foreach ($personData as $field => $value) {
+                                $userObject->{$field} = $value;
+                            }
+                        }
+
+                        $personData['id'] = $id;
+
+                        /* @var AfterPersonUpdateEvent $event */
+                        $this->eventDispatcher->dispatch(new AfterPersonUpdateEvent($ldapPerson, $personData));
                     }
                 }
             }

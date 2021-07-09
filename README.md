@@ -5,12 +5,16 @@ This bundle offers functionality concerning LDAP servers for the Contao CMS.
 ## Features
 
 - synchronization for users and their groups from an ldap server (works both for frontend members and backend users)
-- synchronize by command and/or on demand (login)
+- synchronize by command and/or on demand (login in frontend and backend -> no custom login module required)
 
 ## Installation & configuration
 
 1. Run `composer require heimrichhannot/contao-ldap-bundle`.
 1. Update the database.
+1. **IMPORTANT: Create a backup of your tables `tl_user`, `tl_user_group`, `tl_member` and `tl_member_group` just in
+   case something goes wrong.**
+1. Create your configuration as described in the section "Configuration".
+1. Clear the cache if your system is not in dev environment.
 
 ## Configuration
 
@@ -47,11 +51,20 @@ local entity (you can specify the field being used in your `person_username_ldap
 In most cases, you won't necessarily need to call the command as a cronjob every night, because the data is retrieved on
 demand on login. Nevertheless, if you need to have up-to-date data, you can call the command as often as you like ;-)
 
+### What if the users/members already exist locally *and* in the ldap directory?
+
+If – by means of username – a user or member already exists in the local system and in the ldap directory but has not
+been "migrated", i.e. has a `ldapUidNumber` set in the database, yet?
+
+In this case the match is done by the value of username in contao and in ldap (field is specified
+by `person_username_ldap_field` in your config). Then the corresponding `ldapUidNumber` is set and the data from the
+ldap directory is stored to the local user object so that everything is in sync.
+
 ### Commands
 
 Name | Description | Options
 -----|-------------|--------
-`huh_ldap:sync_persons` | Synchronize the members/users as specified in your `config.yml` | `dry-run`: See what the command would do without changing any data.<br>`mode`: Limit the command to users or members ("user" or "member"). Dismiss the parameter to do both.
+`huh_ldap:sync_persons` | Synchronize the members/users as specified in your `config.yml` | `dry-run`: See what the command would do without changing any data.<br>`mode`: Limit the command to users or members ("user" or "member"). Dismiss the parameter to do both.<br>`uids`: Limit the command to specific uids by providing a comma-separated list.
 
 ### Events
 
@@ -59,5 +72,3 @@ Name | Description
 -----|------------
 AfterPersonImport | Run after a person is initially imported.
 AfterPersonUpdate | Run after a person is updated.
-
-TODO: implement

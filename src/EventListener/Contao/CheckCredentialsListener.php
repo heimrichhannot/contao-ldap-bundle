@@ -47,7 +47,10 @@ class CheckCredentialsListener
         );
 
         if (true === $result) {
-            $this->ldapUtil->syncPerson($mode, $username);
+            $this->ldapUtil->syncPerson($mode, $username, [
+                'setLoginTimestamps' => true,
+                'userObject' => $user,
+            ]);
 
             return true;
         }

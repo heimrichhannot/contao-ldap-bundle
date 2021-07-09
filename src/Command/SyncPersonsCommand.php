@@ -63,6 +63,7 @@ class SyncPersonsCommand extends Command
 
         $this->addOption('dry-run', null, InputOption::VALUE_OPTIONAL, 'See what the command would do without changing any data.', false);
         $this->addOption('mode', null, InputOption::VALUE_OPTIONAL, 'Limit the command to users or members. Possible values are "user" and "member". Leave empty to do both.');
+        $this->addOption('uids', null, InputOption::VALUE_OPTIONAL, 'Limit the command to specific uids by providing a comma-separated list.');
     }
 
     /**
@@ -76,6 +77,7 @@ class SyncPersonsCommand extends Command
 
         $dryRun = false !== $input->getOption('dry-run');
         $modes = $input->getOption('mode') ? [$input->getOption('mode')] : HeimrichHannotLdapBundle::MODES;
+        $uids = array_filter(explode(',', str_replace(' ', '', $input->getOption('uids') ?: '')));
 
         // check for illegal values
         foreach ($modes as $mode) {
@@ -107,6 +109,7 @@ class SyncPersonsCommand extends Command
             $this->ldapUtil->syncPersons($mode, [
                 'io' => $this->io,
                 'dryRun' => $dryRun,
+                'limitUids' => $uids,
             ]);
         }
 
