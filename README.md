@@ -60,6 +60,19 @@ In this case the match is done by the value of username in contao and in ldap (f
 by `person_username_ldap_field` in your config). Then the corresponding `ldapUidNumber` is set and the data from the
 ldap directory is stored to the local user object so that everything is in sync.
 
+In addition, per default, the following fields are synchronized from ldap to the local users/members:
+
+- username
+- email
+- firstname, lastname (members)
+- name (users)
+
+### What if the groups already exist locally *and* in the ldap directory?
+
+Because groups don't have a unique field like "username" in the case of users, if you'd like to avoid that groups
+already existing both in ldap and local are added again locally, you need to set the `ldapGidNumber` in the
+corresponding `tl_member`/`tl_user` database records manually **before importing**.
+
 ### Commands
 
 Name | Description | Options
