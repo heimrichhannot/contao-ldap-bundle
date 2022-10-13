@@ -1,7 +1,7 @@
 <?php
 
 /*
- * Copyright (c) 2021 Heimrich & Hannot GmbH
+ * Copyright (c) 2022 Heimrich & Hannot GmbH
  *
  * @license LGPL-3.0-or-later
  */
@@ -330,7 +330,7 @@ class LdapUtil
                 if (\count($ldapGroups) > 0) {
                     $io->success('Retrieved '.\count($ldapGroups).' group(s) from LDAP:');
 
-                    $io->listing(array_map(function ($group) use ($mode) {
+                    $io->listing(array_map(function ($group) {
                         return $group['name'].' (gid number: '.$group['ldapGidNumber'].($group['isAdmin'] ? ', admin group -> won\'t be imported' : '').')';
                     }, $ldapGroups));
                 } else {
@@ -432,7 +432,7 @@ class LdapUtil
             $table = 'tl_'.$mode;
 
             // associate groups
-            $personData['groups'] = serialize(array_map(function ($data) {
+            $personData['`groups`'] = serialize(array_map(function ($data) {
                 return $data['id'];
             }, $groupAssociations[$ldapPerson['ldapUid']] ?? []));
 
